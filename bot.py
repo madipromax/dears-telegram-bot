@@ -1,24 +1,25 @@
+import os
+import json
+import qrcode
+from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     ContextTypes,
     filters,
 )
-import qrcode
-import os
-import json
-from datetime import datetime
 
-TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
+# Берём токен из Railway Variables
+TOKEN = os.getenv("BOT_TOKEN")
 
 DATA_FILE = "users.json"
 QR_DIR = "qr"
 
 os.makedirs(QR_DIR, exist_ok=True)
 
-# --- загрузка базы пользователей ---
+# --- загрузка пользователей ---
 if os.path.exists(DATA_FILE):
     with open(DATA_FILE, "r", encoding="utf-8") as f:
         users = json.load(f)
@@ -31,10 +32,7 @@ def save_users():
 
 # --- /start ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    button = KeyboardButton(
-        "📲 Получить карту Dears",
-        request_contact=True
-    )
+    button = KeyboardButton("📲 Получить карту Dears", request_contact=True)
     keyboard = ReplyKeyboardMarkup([[button]], resize_keyboard=True)
 
     await update.message.reply_text(
@@ -48,16 +46,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# --- обработка номера телефона ---
+# --- обработка номера ---
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_phone = update.message.contact.phone_number
-
-    # НОРМАЛИЗАЦИЯ НОМЕРА
     phone = raw_phone.replace("+", "").replace(" ", "").replace("-", "")
 
     qr_path = f"{QR_DIR}/{phone}.png"
 
-    # --- если пользователь уже есть ---
     if phone in users:
         await update.message.reply_text(
             "ℹ️ *У вас уже есть карта Dears.*\n"
@@ -66,24 +61,21 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await update.message.reply_photo(
             photo=open(qr_path, "rb"),
-            caption="📌 Покажите QR на кассе для начисления кэшбека"
+            caption="📌 Покажите QR на кассе"
         )
         return
 
-    # --- новая регистрация ---
     users[phone] = {
         "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M")
     }
     save_users()
 
-    # --- генерация QR ---
     img = qrcode.make(phone)
     img.save(qr_path)
 
     await update.message.reply_text(
         "✅ *Карта Dears создана!*\n\n"
-        "📌 Сохраните этот QR и показывайте его на кассе.\n"
-        "Бонусы начисляются автоматически 💸",
+        "Сохраните QR и показывайте его на кассе 💸",
         parse_mode="Markdown"
     )
 
@@ -92,10 +84,16 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         caption="💛 Dears — спасибо, что вы с нами"
     )
 
-# --- запуск приложения ---
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
+# --- запуск ---
+def main():
+    app = Application.builder().token(TOKEN).build()
 
-print("✅ Dears bot is running")
-app.run_polling()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
+
+    print("✅ Dears bot is running")
+    app.run_polling()
+
+if __name__ == "__main__":
+    main()
+

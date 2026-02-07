@@ -14,19 +14,14 @@ from telegram.ext import (
 
 # ================= НАСТРОЙКИ =================
 
-TOKEN = os.getenv("8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets")
+TOKEN = os.getenv("8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets")          
+DATABASE_URL = os.getenv("DATABASE_URL")  # Reference от Postgres
 ADMIN_ID = 1284049287  # TELEGRAM ID
 
 # ================= БД =================
 
 def get_db():
-    return psycopg2.connect(
-        host=os.getenv("PGHOST"),
-        port=os.getenv("PGPORT"),
-        dbname=os.getenv("PGDATABASE"),
-        user=os.getenv("PGUSER"),
-        password=os.getenv("PGPASSWORD"),
-    )
+    return psycopg2.connect(DATABASE_URL)
 
 def init_db():
     conn = get_db()
@@ -61,7 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ================= НОМЕР =================
+# ================= ОБРАБОТКА НОМЕРА =================
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_phone = update.message.contact.phone_number
@@ -74,10 +69,9 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     exists = cur.fetchone()
 
     if exists:
-        await update.message.reply_text(
+        text = (
             "ℹ️ *У вас уже есть карта Dears.*\n"
-            "Используйте этот QR при оплате 👇",
-            parse_mode="Markdown"
+            "Используйте этот QR при оплате 👇"
         )
     else:
         cur.execute(
@@ -85,10 +79,9 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             (phone, datetime.now())
         )
         conn.commit()
-        await update.message.reply_text(
+        text = (
             "✅ *Карта Dears создана!*\n"
-            "Сохраните QR и показывайте его на кассе 💸",
-            parse_mode="Markdown"
+            "Сохраните QR и показывайте его на кассе 💸"
         )
 
     cur.close()
@@ -97,6 +90,7 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     img = qrcode.make(phone)
     img.save("qr.png")
 
+    await update.message.reply_text(text, parse_mode="Markdown")
     await update.message.reply_photo(
         photo=open("qr.png", "rb"),
         caption="💛 Dears — карта лояльности"
@@ -146,8 +140,8 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["phone", "registered_at"])
-        for row in rows:
-            writer.writerow(row)
+        for phone, registered_at in rows:
+            writer.writerow([phone, registered_at])
 
     await update.message.reply_document(
         document=open(filename, "rb"),
@@ -165,7 +159,7 @@ def main():
     app.add_handler(CommandHandler("export", export))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    print("✅ Dears bot with DB is running")
+    print("✅ Dears bot with PostgreSQL is running")
     app.run_polling()
 
 if __name__ == "__main__":

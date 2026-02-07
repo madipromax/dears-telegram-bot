@@ -3,7 +3,7 @@ import time
 import psycopg2
 import qrcode
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -13,9 +13,13 @@ from telegram.ext import (
     filters
 )
 
+# ================== НАСТРОЙКИ ==================
+
 TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
 DATABASE_URL = os.getenv("DATABASE_URL")
 ADMIN_ID = 1284049287
+
+# ================== БАЗА ==================
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
@@ -40,12 +44,13 @@ def init_db():
         except Exception:
             time.sleep(delay)
 
+# ================== /start ==================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет!\n\n"
         "Это *Dears — карта лояльности* 💛\n\n"
-        "Нажми кнопку ниже, отправь номер\n"
-        "и получи QR-код для кэшбека.",
+        "Покажи QR-код на кассе и получай кэшбек.\n",
         parse_mode="Markdown"
     )
 
@@ -56,9 +61,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup([[button]], resize_keyboard=True)
 
     await update.message.reply_text(
-        "👇 Получить карту",
+        "👇 Нажми кнопку, чтобы получить карту",
         reply_markup=keyboard
     )
+
+# ================== НОМЕР ==================
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.contact.phone_number
@@ -72,16 +79,16 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if exists:
         text = (
             "ℹ️ *У тебя уже есть карта Dears.*\n\n"
-            "Покажи этот QR на кассе 👇"
+            "Используй этот QR на кассе 👇"
         )
     else:
         cur.execute(
             "INSERT INTO clients (phone, registered_at) VALUES (%s, %s)",
-            (phone, datetime.now())
+            (phone, datetime.utcnow())
         )
         conn.commit()
         text = (
-            "✅ *Карта Dears создана!*\n\n"
+            "✅ *Карта Dears успешно создана!*\n\n"
             "Сохрани QR и показывай его на кассе 💸"
         )
 
@@ -96,6 +103,8 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo=open("qr.png", "rb"),
         caption="💛 Dears — карта лояльности"
     )
+
+# ================== /clients ==================
 
 async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -117,6 +126,8 @@ async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}) {phone}\n"
 
     await update.message.reply_text(text)
+
+# ================== /export ==================
 
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -140,13 +151,17 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for phone, registered_at in rows:
             local_time = registered_at + timedelta(hours=5)
-            writer.writerow([phone, local_time.strftime("%Y-%m-%d %H:%M:%S")])
+            writer.writerow([
+                phone,
+                local_time.strftime("%Y-%m-%d %H:%M:%S")
+            ])
 
     await update.message.reply_document(
         document=open(filename, "rb"),
         caption="📊 Клиенты Dears (время KZ)"
     )
 
+# ================== ЗАПУСК ==================
 
 def main():
     init_db()
@@ -158,9 +173,8 @@ def main():
     app.add_handler(CommandHandler("export", export))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    print("BOT IS RUNNING")
+    print("✅ Dears bot is running")
     app.run_polling()
 
 if __name__ == "__main__":
     main()
-

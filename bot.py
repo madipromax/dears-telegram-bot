@@ -12,23 +12,16 @@ from telegram.ext import (
     filters
 )
 
-# === ВАЖНО ===
-# ВСТАВЬ СЮДА РЕАЛЬНЫЙ ТОКЕН ОТ @BotFather
 TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
-
 DATABASE_URL = os.getenv("DATABASE_URL")
-
 ADMIN_ID = 1284049287
-
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
-
 def init_db():
     retries = 5
     delay = 3
-
     for _ in range(retries):
         try:
             conn = get_db()
@@ -46,8 +39,17 @@ def init_db():
         except Exception:
             time.sleep(delay)
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "👋 Привет!\n\n"
+        "Это *Dears — карта лояльности* 💛\n\n"
+        "Чтобы получить кэшбек:\n"
+        "1️⃣ Нажми кнопку ниже\n"
+        "2️⃣ Отправь номер\n"
+        "3️⃣ Покажи QR на кассе",
+        parse_mode="Markdown"
+    )
+
     button = KeyboardButton(
         text="📲 Получить карту Dears",
         request_contact=True
@@ -55,11 +57,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup([[button]], resize_keyboard=True)
 
     await update.message.reply_text(
-        "💛 Dears — карта лояльности\n\n"
-        "Нажмите кнопку ниже, чтобы получить карту 👇",
+        "👇 Нажми кнопку, чтобы получить карту",
         reply_markup=keyboard
     )
-
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.contact.phone_number
@@ -71,12 +71,21 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute("SELECT phone FROM clients WHERE phone = %s", (phone,))
     exists = cur.fetchone()
 
-    if not exists:
+    if exists:
+        text = (
+            "ℹ️ *У тебя уже есть карта Dears.*\n\n"
+            "Покажи этот QR на кассе 👇"
+        )
+    else:
         cur.execute(
             "INSERT INTO clients (phone, registered_at) VALUES (%s, %s)",
             (phone, datetime.now())
         )
         conn.commit()
+        text = (
+            "✅ *Карта Dears успешно создана!*\n\n"
+            "Сохрани QR и показывай его на кассе 💸"
+        )
 
     cur.close()
     conn.close()
@@ -84,11 +93,11 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     img = qrcode.make(phone)
     img.save("qr.png")
 
+    await update.message.reply_text(text, parse_mode="Markdown")
     await update.message.reply_photo(
         photo=open("qr.png", "rb"),
-        caption="💛 Dears"
+        caption="💛 Dears — карта лояльности"
     )
-
 
 async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -102,15 +111,14 @@ async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
 
     if not rows:
-        await update.message.reply_text("Нет клиентов")
+        await update.message.reply_text("Пока нет клиентов")
         return
 
-    text = ""
+    text = "👥 Клиенты с картой Dears:\n\n"
     for i, (phone,) in enumerate(rows, start=1):
         text += f"{i}) {phone}\n"
 
     await update.message.reply_text(text)
-
 
 def main():
     init_db()
@@ -121,9 +129,9 @@ def main():
     app.add_handler(CommandHandler("clients", clients))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    print("BOT STARTED")
+    print("BOT IS RUNNING")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
+

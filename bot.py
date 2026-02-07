@@ -2,6 +2,7 @@ import os
 import time
 import psycopg2
 import qrcode
+import csv
 from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -43,10 +44,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 Привет!\n\n"
         "Это *Dears — карта лояльности* 💛\n\n"
-        "Чтобы получить кэшбек:\n"
-        "1️⃣ Нажми кнопку ниже\n"
-        "2️⃣ Отправь номер\n"
-        "3️⃣ Покажи QR на кассе",
+        "Нажми кнопку ниже, отправь номер\n"
+        "и получи QR-код для кэшбека.",
         parse_mode="Markdown"
     )
 
@@ -57,7 +56,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = ReplyKeyboardMarkup([[button]], resize_keyboard=True)
 
     await update.message.reply_text(
-        "👇 Нажми кнопку, чтобы получить карту",
+        "👇 Получить карту",
         reply_markup=keyboard
     )
 
@@ -67,7 +66,6 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_db()
     cur = conn.cursor()
-
     cur.execute("SELECT phone FROM clients WHERE phone = %s", (phone,))
     exists = cur.fetchone()
 
@@ -83,7 +81,7 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         conn.commit()
         text = (
-            "✅ *Карта Dears успешно создана!*\n\n"
+            "✅ *Карта Dears создана!*\n\n"
             "Сохрани QR и показывай его на кассе 💸"
         )
 
@@ -114,11 +112,38 @@ async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пока нет клиентов")
         return
 
-    text = "👥 Клиенты с картой Dears:\n\n"
+    text = "👥 Клиенты Dears:\n\n"
     for i, (phone,) in enumerate(rows, start=1):
         text += f"{i}) {phone}\n"
 
     await update.message.reply_text(text)
+
+async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_ID:
+        return
+
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT phone, registered_at FROM clients ORDER BY registered_at")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        await update.message.reply_text("Нет данных для экспорта")
+        return
+
+    filename = "clients.csv"
+    with open(filename, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(["phone", "registered_at"])
+        for phone, registered_at in rows:
+            writer.writerow([phone, registered_at])
+
+    await update.message.reply_document(
+        document=open(filename, "rb"),
+        caption="📊 Клиенты Dears (CSV)"
+    )
 
 def main():
     init_db()
@@ -127,6 +152,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clients", clients))
+    app.add_handler(CommandHandler("export", export))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
     print("BOT IS RUNNING")
@@ -134,4 +160,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

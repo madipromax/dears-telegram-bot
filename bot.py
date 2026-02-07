@@ -12,12 +12,18 @@ from telegram.ext import (
     filters
 )
 
-TOKEN = os.getenv("8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets")
+# === ВАЖНО ===
+# ВСТАВЬ СЮДА РЕАЛЬНЫЙ ТОКЕН ОТ @BotFather
+TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
+
 DATABASE_URL = os.getenv("DATABASE_URL")
-ADMIN_ID = 1284049287  
+
+ADMIN_ID = 1284049287
+
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
+
 
 def init_db():
     retries = 5
@@ -40,6 +46,7 @@ def init_db():
         except Exception:
             time.sleep(delay)
 
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     button = KeyboardButton(
         text="📲 Получить карту Dears",
@@ -53,12 +60,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=keyboard
     )
 
+
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     phone = update.message.contact.phone_number
     phone = phone.replace("+", "").replace(" ", "").replace("-", "")
 
     conn = get_db()
     cur = conn.cursor()
+
     cur.execute("SELECT phone FROM clients WHERE phone = %s", (phone,))
     exists = cur.fetchone()
 
@@ -79,6 +88,7 @@ async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo=open("qr.png", "rb"),
         caption="💛 Dears"
     )
+
 
 async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
@@ -101,15 +111,19 @@ async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(text)
 
+
 def main():
     init_db()
 
     app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("clients", clients))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
+    print("BOT STARTED")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()

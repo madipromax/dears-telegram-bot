@@ -136,14 +136,17 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     filename = "clients.csv"
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["phone", "registered_at"])
+        writer.writerow(["phone", "registered_at (Asia/Almaty)"])
+
         for phone, registered_at in rows:
-            writer.writerow([phone, registered_at])
+            local_time = registered_at + timedelta(hours=5)
+            writer.writerow([phone, local_time.strftime("%Y-%m-%d %H:%M:%S")])
 
     await update.message.reply_document(
         document=open(filename, "rb"),
-        caption="📊 Клиенты Dears (CSV)"
+        caption="📊 Клиенты Dears (время KZ)"
     )
+
 
 def main():
     init_db()
@@ -160,3 +163,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

@@ -1,7 +1,7 @@
 import os
-import json
 import csv
 import qrcode
+import psycopg2
 from datetime import datetime
 from telegram import Update, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import (
@@ -14,27 +14,32 @@ from telegram.ext import (
 
 # ================= НАСТРОЙКИ =================
 
-# Токен
-TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
+TOKEN = os.getenv("8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets")
+ADMIN_ID = 1284049287  # TELEGRAM ID
 
-# Мой Telegram ID 
-ADMIN_ID = 1284049287  
-DATA_FILE = "users.json"
-QR_DIR = "qr"
+# ================= БД =================
 
-os.makedirs(QR_DIR, exist_ok=True)
+def get_db():
+    return psycopg2.connect(
+        host=os.getenv("PGHOST"),
+        port=os.getenv("PGPORT"),
+        dbname=os.getenv("PGDATABASE"),
+        user=os.getenv("PGUSER"),
+        password=os.getenv("PGPASSWORD"),
+    )
 
-# ================= ЗАГРУЗКА ДАННЫХ =================
-
-if os.path.exists(DATA_FILE):
-    with open(DATA_FILE, "r", encoding="utf-8") as f:
-        users = json.load(f)
-else:
-    users = {}
-
-def save_users():
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(users, f, ensure_ascii=False, indent=2)
+def init_db():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
+            phone TEXT PRIMARY KEY,
+            registered_at TIMESTAMP
+        )
+    """)
+    conn.commit()
+    cur.close()
+    conn.close()
 
 # ================= /start =================
 
@@ -56,87 +61,93 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ================= ОБРАБОТКА НОМЕРА =================
+# ================= НОМЕР =================
 
 async def contact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     raw_phone = update.message.contact.phone_number
+    phone = raw_phone.replace("+", "").replace(" ", "").replace("-", "")
 
-    # нормализация номера
-    phone = (
-        raw_phone
-        .replace("+", "")
-        .replace(" ", "")
-        .replace("-", "")
-    )
+    conn = get_db()
+    cur = conn.cursor()
 
-    qr_path = f"{QR_DIR}/{phone}.png"
+    cur.execute("SELECT phone FROM clients WHERE phone = %s", (phone,))
+    exists = cur.fetchone()
 
-    # если уже есть
-    if phone in users:
+    if exists:
         await update.message.reply_text(
             "ℹ️ *У вас уже есть карта Dears.*\n"
             "Используйте этот QR при оплате 👇",
             parse_mode="Markdown"
         )
-        await update.message.reply_photo(
-            photo=open(qr_path, "rb"),
-            caption="📌 Покажите QR на кассе"
+    else:
+        cur.execute(
+            "INSERT INTO clients (phone, registered_at) VALUES (%s, %s)",
+            (phone, datetime.now())
         )
-        return
+        conn.commit()
+        await update.message.reply_text(
+            "✅ *Карта Dears создана!*\n"
+            "Сохраните QR и показывайте его на кассе 💸",
+            parse_mode="Markdown"
+        )
 
-    # новая регистрация
-    users[phone] = {
-        "registered_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-    }
-    save_users()
+    cur.close()
+    conn.close()
 
     img = qrcode.make(phone)
-    img.save(qr_path)
-
-    await update.message.reply_text(
-        "✅ *Карта Dears создана!*\n\n"
-        "Сохраните QR и показывайте его на кассе 💸",
-        parse_mode="Markdown"
-    )
+    img.save("qr.png")
 
     await update.message.reply_photo(
-        photo=open(qr_path, "rb"),
-        caption="💛 Dears — спасибо, что вы с нами"
+        photo=open("qr.png", "rb"),
+        caption="💛 Dears — карта лояльности"
     )
 
-# ================= /clients (ТОЛЬКО АДМИН) =================
+# ================= /clients =================
 
 async def clients(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    if not users:
-        await update.message.reply_text("Пока нет зарегистрированных клиентов.")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT phone FROM clients ORDER BY registered_at")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        await update.message.reply_text("Пока нет клиентов.")
         return
 
     text = "👥 *Клиенты с картой:*\n\n"
-    for i, phone in enumerate(users.keys(), start=1):
+    for i, (phone,) in enumerate(rows, start=1):
         text += f"{i}) {phone}\n"
 
     await update.message.reply_text(text, parse_mode="Markdown")
 
-# ================= /export (CSV) =================
+# ================= /export =================
 
 async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         return
 
-    if not users:
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT phone, registered_at FROM clients ORDER BY registered_at")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
         await update.message.reply_text("Нет данных для экспорта.")
         return
 
     filename = "clients.csv"
-
     with open(filename, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow(["phone", "registered_at"])
-        for phone, data in users.items():
-            writer.writerow([phone, data.get("registered_at", "")])
+        for row in rows:
+            writer.writerow(row)
 
     await update.message.reply_document(
         document=open(filename, "rb"),
@@ -146,6 +157,7 @@ async def export(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= ЗАПУСК =================
 
 def main():
+    init_db()
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -153,7 +165,7 @@ def main():
     app.add_handler(CommandHandler("export", export))
     app.add_handler(MessageHandler(filters.CONTACT, contact_handler))
 
-    print("✅ Dears bot is running")
+    print("✅ Dears bot with DB is running")
     app.run_polling()
 
 if __name__ == "__main__":

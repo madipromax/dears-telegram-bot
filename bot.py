@@ -14,7 +14,8 @@ from telegram.ext import (
 # ====== НАСТРОЙКИ ======
 
 # Токен берётся из Railway → Variables
-TOKEN = os.getenv("8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets")
+TOKEN = "8535698958:AAEBKxx6xCYE0kT5ca0t9KH-_1uZwZaHets"
+
 
 # МОЙ TELEGRAM ID
 ADMIN_ID = 1284049287
@@ -134,3 +135,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
